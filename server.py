@@ -17,7 +17,14 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pdf2docx import Converter
 from pydantic import BaseModel, Field
 
-APP_DIR = Path(__file__).resolve().parent
+import sys
+from pathlib import Path
+
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys._MEIPASS)
+else:
+    APP_DIR = Path(__file__).resolve().parent
+
 INDEX_HTML = APP_DIR / "index.html"
 
 # All working files live below the OS temp directory.
