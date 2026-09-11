@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF Workbench</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #121a2d;
+      --panel2: #18223a;
+      --border: #2b3857;
+      --text: #e8edf7;
+      --muted: #91a0bb;
+      --accent: #62a8ff;
+      --accent2: #7c5cff;
+      --danger: #ff6b7a;
+      --success: #48d597;
+      --shadow: 0 18px 50px rgba(0,0,0,.25);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: radial-gradient(circle at top right,#172449 0,#0b1020 42%);
+      color: var(--text); font: 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      min-height: 100vh;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .app { max-width: 1500px; margin: 0 auto; padding: 24px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px; }
+    h1 { margin:0; font-size:25px; letter-spacing:-.02em; }
+    .subtitle { color:var(--muted); margin-top:4px; }
+    .toolbar { display:flex; gap:9px; flex-wrap:wrap; justify-content:flex-end; }
+    .btn {
+      border:1px solid var(--border); background:var(--panel); color:var(--text);
+      padding:10px 14px; border-radius:10px; transition:.15s; box-shadow:0 4px 16px rgba(0,0,0,.12);
+    }
+    .btn:hover { transform:translateY(-1px); border-color:#4b608a; background:var(--panel2); }
+    .btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); border:0; font-weight:700; }
+    .btn.danger { color:#ffd8dc; }
+    .btn:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+    .drop {
+      border:1px dashed #48618c; border-radius:16px; background:rgba(18,26,45,.72);
+      padding:26px; text-align:center; box-shadow:var(--shadow); margin-bottom:20px;
+    }
+    .drop.dragover { border-color:var(--accent); background:rgba(47,85,145,.2); }
+    .drop strong { font-size:16px; }
+    .drop p { margin:7px 0 14px; color:var(--muted); }
+    #fileInput { display:none; }
+    .status { min-height:22px; color:var(--muted); margin:10px 0 14px; }
+    .status.ok { color:var(--success); }
+    .status.error { color:#ff9da8; }
+    .workbench {
+      background:rgba(18,26,45,.84); border:1px solid var(--border); border-radius:16px;
+      box-shadow:var(--shadow); overflow:hidden;
+    }
+    .workbench-head { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); }
+    .count { color:var(--muted); }
+    .grid {
+      padding:18px; display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:16px;
+      min-height:300px;
+    }
+    .empty { grid-column:1/-1; display:grid; place-items:center; min-height:260px; color:var(--muted); }
+    .page {
+      position:relative; background:#fff; color:#111; border:2px solid transparent; border-radius:12px;
+      overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,.25); user-select:none;
+    }
+    .page.dragging { opacity:.45; }
+    .page.drag-target { border-color:var(--accent); }
+    .thumb-wrap { position:relative; background:#e9edf4; aspect-ratio: .77; overflow:hidden; }
+    .thumb { width:100%; height:100%; object-fit:contain; display:block; }
+    .page-number {
+      position:absolute; left:8px; top:8px; background:rgba(8,13,25,.85); color:#fff;
+      padding:4px 7px; border-radius:7px; font-weight:700; font-size:12px;
+    }
+    .drag-handle {
+      position:absolute; right:8px; top:8px; background:rgba(8,13,25,.85); color:#fff;
+      padding:5px 8px; border-radius:7px; cursor:grab; font-size:14px;
+    }
+    .page-info { padding:10px; }
+    .page-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600; }
+    .page-actions { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
+    .mini {
+      border:1px solid #cbd3df; background:#f8fafc; color:#334155; border-radius:7px;
+      padding:5px 8px; font-size:12px;
+    }
+    .mini.remove { color:#b4232f; }
+    .footer-note { padding:13px 16px; border-top:1px solid var(--border); color:var(--muted); }
+    .spinner { display:inline-block; width:13px; height:13px; border:2px solid #71809a; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; margin-right:7px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @media (max-width:800px) {
+      .app { padding:14px; }
+      header { align-items:flex-start; flex-direction:column; }
+      .toolbar { justify-content:flex-start; }
+      .grid { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>PDF Workbench</h1>
+      <div class="subtitle">Local PDF page organizer, merger and Word converter</div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="nativeOpenBtn">＋ Add PDFs</button>
+      <button class="btn" id="browserOpenBtn">Import files</button>
+      <button class="btn" id="clearBtn">Clear</button>
+      <button class="btn primary" id="mergeBtn" disabled>Merge selected pages</button>
+      <button class="btn" id="wordBtn" disabled>Convert to Word</button>
+    </div>
+  </header>
+
+  <div class="drop" id="dropZone">
+    <strong>Drop PDF files here</strong>
+    <p>Pages are processed locally on this computer. Drag cards to reorder them.</p>
+    <button class="btn" id="chooseBtn">Choose PDF files</button>
+    <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple>
+  </div>
+
+  <div class="status" id="status">Ready.</div>
+
+  <section class="workbench">
+    <div class="workbench-head">
+      <strong>Page sequence</strong>
+      <span class="count" id="count">0 pages</span>
+    </div>
+    <div class="grid" id="grid">
+      <div class="empty">Import one or more PDFs to start.</div>
+    </div>
+    <div class="footer-note">Tip: remove unwanted pages with the Remove button. The order shown here is the export order.</div>
+  </section>
+</div>
+
+<script>
+const state = { pages: [], docs: new Map() };
+const $ = (id) => document.getElementById(id);
+
+function isPywebview() {
+  return !!(window.pywebview && window.pywebview.api);
+}
+
+function setStatus(message, type = "") {
+  $("status").className = "status " + type;
+  $("status").innerHTML = message;
+}
+
+function updateButtons() {
+  const has = state.pages.length > 0;
+  $("mergeBtn").disabled = !has;
+  $("wordBtn").disabled = !has;
+  $("count").textContent = `${state.pages.length} page${state.pages.length === 1 ? "" : "s"}`;
+}
+
+function render() {
+  const grid = $("grid");
+  grid.innerHTML = "";
+
+  if (!state.pages.length) {
+    grid.innerHTML = '<div class="empty">Import one or more PDFs to start.</div>';
+    updateButtons();
+    return;
+  }
+
+  state.pages.forEach((page, index) => {
+    const card = document.createElement("article");
+    card.className = "page";
+    card.draggable = true;
+    card.dataset.index = index;
+
+    card.innerHTML = `
+      <div class="thumb-wrap">
+        <img class="thumb" loading="lazy"
+             src="/api/page-image/${encodeURIComponent(page.doc_id)}/${page.page_index}"
+             alt="PDF page ${index + 1}">
+        <span class="page-number">${index + 1}</span>
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
+      </div>
+      <div class="page-info">
+        <div class="page-name" title="${escapeHtml(page.name)}">${escapeHtml(page.name)}</div>
+        <div class="page-actions">
+          <button class="mini" data-up="${index}" ${index === 0 ? "disabled" : ""}>↑ Move</button>
+          <button class="mini remove" data-remove="${index}">Remove</button>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener("dragstart", () => {
+      card.classList.add("dragging");
+      card.dataset.dragIndex = index;
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      document.querySelectorAll(".drag-target").forEach(x => x.classList.remove("drag-target"));
+    });
+    card.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      card.classList.add("drag-target");
+    });
+    card.addEventListener("dragleave", () => card.classList.remove("drag-target"));
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      card.classList.remove("drag-target");
+      const from = Number(document.querySelector(".dragging")?.dataset.index);
+      const to = index;
+      if (Number.isInteger(from) && from !== to) {
+        const [item] = state.pages.splice(from, 1);
+        state.pages.splice(to, 0, item);
+        render();
+      }
+    });
+
+    card.querySelector(`[data-remove="${index}"]`).onclick = () => {
+      state.pages.splice(index, 1);
+      render();
+    };
+    if (index > 0) {
+      card.querySelector(`[data-up="${index}"]`).onclick = () => {
+        [state.pages[index - 1], state.pages[index]] = [state.pages[index], state.pages[index - 1]];
+        render();
+      };
+    }
+    grid.appendChild(card);
+  });
+  updateButtons();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[c]));
+}
+
+async function addDocuments(documents) {
+  for (const doc of documents) {
+    state.docs.set(doc.doc_id, doc);
+    for (const p of doc.pages) {
+      state.pages.push({...p, name: doc.name});
+    }
+  }
+  render();
+  setStatus(`Imported ${documents.length} PDF${documents.length === 1 ? "" : "s"}.`, "ok");
+}
+
+async function importBrowserFiles(files) {
+  const pdfs = [...files].filter(f => f.name.toLowerCase().endsWith(".pdf"));
+  if (!pdfs.length) {
+    setStatus("Please choose PDF files.", "error");
+    return;
+  }
+  setStatus('<span class="spinner"></span>Importing PDFs…');
+  const form = new FormData();
+  pdfs.forEach(f => form.append("files", f));
+  try {
+    const res = await fetch("/api/upload", {method:"POST", body:form});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Upload failed");
+    await addDocuments(data.documents);
+  } catch (err) {
+    setStatus(escapeHtml(err.message), "error");
+  }
+}
+
+async function importNativeFiles() {
+  if (!isPywebview()) {
+    $("fileInput").click();
+    return;
+  }
+  setStatus('<span class="spinner"></span>Opening native file dialog…');
+  try {
+    const paths = await window.pywebview.api.select_file();
+    if (!paths || !paths.length) {
+      setStatus("Ready.");
+      return;
+    }
+    setStatus('<span class="spinner"></span>Importing selected PDFs…');
+    const res = await fetch("/api/upload-paths", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({paths})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Import failed");
+    await addDocuments(data.documents);
+  } catch (err) {
+    setStatus(escapeHtml(err.message), "error");
+  }
+}
+
+async function chooseOutput(defaultName, type) {
+  if (isPywebview()) {
+    const path = await window.pywebview.api.save_file(defaultName, type);
+    return path || null;
+  }
+  return null;
+}
+
+async function exportPdf() {
+  if (!state.pages.length) return;
+  setStatus('<span class="spinner"></span>Preparing merged PDF…');
+
+  try {
+    const defaultName = "merged.pdf";
+    const outputPath = await chooseOutput(defaultName, "PDF");
+    const body = {
+      pages: state.pages.map(p => ({doc_id:p.doc_id, page_index:p.page_index})),
+      filename: defaultName
+    };
+    if (outputPath) body.output_path = outputPath;
+
+    const res = await fetch("/api/merge", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "Merge failed");
+    }
+
+    if (outputPath) {
+      setStatus(`Saved PDF to <b>${escapeHtml(outputPath)}</b>`, "ok");
+    } else {
+      const blob = await res.blob();
+      downloadBlob(blob, defaultName);
+      setStatus("Merged PDF downloaded.", "ok");
+    }
+  } catch (err) {
+    setStatus(escapeHtml(err.message), "error");
+  }
+}
+
+async function exportWord() {
+  if (!state.pages.length) return;
+  setStatus('<span class="spinner"></span>Converting selected pages to Word…');
+
+  try {
+    const defaultName = "converted.docx";
+    const outputPath = await chooseOutput(defaultName, "DOCX");
+    const body = {
+      pages: state.pages.map(p => ({doc_id:p.doc_id, page_index:p.page_index})),
+      filename: defaultName
+    };
+    if (outputPath) body.output_path = outputPath;
+
+    const res = await fetch("/convert-to-word", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "Word conversion failed");
+    }
+
+    if (outputPath) {
+      setStatus(`Saved Word document to <b>${escapeHtml(outputPath)}</b>`, "ok");
+    } else {
+      const blob = await res.blob();
+      downloadBlob(blob, defaultName);
+      setStatus("Word document downloaded.", "ok");
+    }
+  } catch (err) {
+    setStatus(escapeHtml(err.message), "error");
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$("nativeOpenBtn").onclick = importNativeFiles;
+$("browserOpenBtn").onclick = () => $("fileInput").click();
+$("chooseBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => importBrowserFiles(e.target.files);
+$("mergeBtn").onclick = exportPdf;
+$("wordBtn").onclick = exportWord;
+$("clearBtn").onclick = () => {
+  state.pages = []; state.docs.clear(); render(); setStatus("Cleared.");
+};
+
+const drop = $("dropZone");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("dragover"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+drop.addEventListener("drop", e => {
+  e.preventDefault(); drop.classList.remove("dragover");
+  importBrowserFiles(e.dataTransfer.files);
+});
+
+render();
+</script>
+</body>
+</html>
